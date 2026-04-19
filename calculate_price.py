@@ -8,34 +8,84 @@ from datetime import datetime
 def get_rub_to_cny_rate():
     """
     获取卢布兑人民币汇率（100 RUB = X CNY）
-    优先从新浪外汇抓取实时数据，失败则使用本地缓存
+    优先从多个数据源抓取实时数据，失败则使用本地缓存
     """
-    try:
-        # 尝试从新浪外汇抓取数据
-        url = "https://hq.sinajs.cn/list=SRUB"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-        }
-        response = requests.get(url, headers=headers, timeout=5)
-        response.encoding = 'gbk'
-
-        # 解析返回数据
-        data_str = response.text
-        match = re.search(r'"([^"]+)"', data_str)
-        if match:
-            parts = match.group(1).split(',')
-            if len(parts) >= 2:
-                rate_per_100rub = float(parts[1])  # 100卢布对应的人民币金额
-                print(f"✅ 汇率已更新: 100 卢布 ≈ {rate_per_100rub} 人民币 (数据源: 新浪外汇)")
-                return rate_per_100rub / 100.0  # 转换为 1 RUB = X CNY
-
-        raise ValueError("解析网页数据失败")
-
-    except Exception as e:
-        # 降级方案：使用本地缓存汇率
-        cached_rate = 0.08674  # 1 RUB ≈ 0.08674 CNY (100 RUB ≈ 8.674 CNY)
-        print(f"⚠️  网络获取失败，使用缓存汇率: 100 卢布 ≈ 8.67 人民币")
-        return cached_rate
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Connection': 'keep-alive',
+    }
+    
+    def try_sina():
+        try:
+            url = "https://hq.sinajs.cn/list=fx_srub"
+            resp = requests.get(url, headers=headers, timeout=10)
+            resp.encoding = 'gbk'
+            data_str = resp.text
+            match = re.search(r'"([^"]+)"', data_str)
+            if match:
+                parts = match.group(1).split(',')
+                if len(parts) >= 2:
+                    rate_per_100rub = float(parts[1])
+                    if rate_per_100rub > 0:
+                        print(f"✅ 汇率已更新: 100 卢布 ≈ {rate_per_100rub:.2f} 人民币 (数据源: 新浪外汇)")
+                        return rate_per_100rub / 100.0
+        except Exception:
+            pass
+        return None
+    
+    def try_cmb():
+        try:
+            url = "https://fx.cmbchina.com/api/v1/fxrate/getfxrate"
+            resp = requests.get(url, headers=headers, timeout=10)
+            data = resp.json()
+            if data.get('success'):
+                for item in data.get('data', []):
+                    if item.get('ccyNbrEn') == 'RUB':
+                        rate = float(item.get('rtbBid', 0)) / 100
+                        if rate > 0:
+                            print(f"✅ 汇率已更新: 100 卢布 ≈ {rate*100:.2f} 人民币 (数据源: 招商银行)")
+                            return rate
+        except Exception:
+            pass
+        return None
+    
+    def try_exchange_rate_api():
+        try:
+            url = "https://api.exchangerate-api.com/v4/latest/CNY"
+            resp = requests.get(url, headers=headers, timeout=10)
+            data = resp.json()
+            rub_rate = data.get('rates', {}).get('RUB')
+            if rub_rate and rub_rate > 0:
+                rate = 1 / rub_rate
+                print(f"✅ 汇率已更新: 100 卢布 ≈ {rate*100:.2f} 人民币 (数据源: ExchangeRate-API)")
+                return rate
+        except Exception:
+            pass
+        return None
+    
+    def try_frankfurter():
+        try:
+            url = "https://api.frankfurter.app/latest?from=RUB&to=CNY"
+            resp = requests.get(url, headers=headers, timeout=10)
+            data = resp.json()
+            rate = data.get('rates', {}).get('CNY')
+            if rate and rate > 0:
+                print(f"✅ 汇率已更新: 100 卢布 ≈ {rate*100:.2f} 人民币 (数据源: Frankfurter)")
+                return rate
+        except Exception:
+            pass
+        return None
+    
+    for source_func in [try_sina, try_frankfurter, try_exchange_rate_api, try_cmb]:
+        result = source_func()
+        if result:
+            return result
+    
+    cached_rate = 0.08674
+    print(f"⚠️  网络获取失败，使用缓存汇率: 100 卢布 ≈ 8.67 人民币")
+    return cached_rate
 
 
 # ---------- 内置物流数据 ----------
