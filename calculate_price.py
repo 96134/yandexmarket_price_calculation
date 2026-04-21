@@ -332,9 +332,12 @@ def main():
     print(f"当前汇率: 1 卢布 = {exchange_rate:.4f} 人民币")
     print(f"换算比例: 1 人民币 = {1 / exchange_rate:.2f} 卢布")
 
+    loop_count = 0
+
     while True:
+        loop_count += 1
         print("\n" + "=" * 60)
-        print("新的定价计算")
+        print(f"新的定价计算  [第 {loop_count} 次]")
         print("=" * 60)
 
         user_input = get_user_input()
